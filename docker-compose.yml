@@ -1,0 +1,114 @@
+services:
+  # --- BASES DE DONNÉES ---
+  postgres-db-auth:
+    image: postgres:15-alpine
+    container_name: postgres-db-auth
+    environment:
+      POSTGRES_DB: auth_db
+      POSTGRES_USER: globe
+      POSTGRES_PASSWORD: password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_auth_data:/var/lib/postgresql/data
+    networks:
+      - medi-network
+  postgres-db-case:
+    image: postgres:15-alpine
+    container_name: postgres-db-case
+    environment:
+      POSTGRES_DB: case_db
+      POSTGRES_USER: globe
+      POSTGRES_PASSWORD: password
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_case_data:/var/lib/postgresql/data
+    networks:
+      - medi-network
+
+  # --- MICROSERVICES BACKEND ---
+  back-user:
+    build: ../back-user
+    container_name: back-user
+    ports:
+      - "8081:8081"
+    environment:
+      - JWT_SECRET=${JWT_SECRET}
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres-db-auth:5432/auth_db
+      - SPRING_DATASOURCE_USERNAME=globe
+      - SPRING_DATASOURCE_PASSWORD=password
+      - APP_ADMIN_EMAIL=${APP_ADMIN_EMAIL}
+      - APP_ADMIN_PASSWORD=${APP_ADMIN_PASSWORD}
+    depends_on:
+      - postgres-db-auth
+    networks:
+      - medi-network
+
+  back-case:
+    build: ../back-case
+    container_name: back-case
+    ports:
+      - "8082:8082"
+    environment:
+      - JWT_SECRET=${JWT_SECRET}
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres-db-case:5432/case_db
+      - SPRING_DATASOURCE_USERNAME=globe
+      - SPRING_DATASOURCE_PASSWORD=password
+    depends_on:
+      - postgres-db-case
+    networks:
+      - medi-network
+
+  # --- SPRING CLOUD GATEWAY ---
+  gateway:
+    build: ../gateway
+    container_name: spring-cloud-gateway
+    ports:
+      - "8080:8080"
+    environment:
+    - SERVER_PORT=8080
+    - SPRING_APPLICATION_NAME=gateway
+    - JWT_SECRET=${JWT_SECRET}
+    - BACK_CASE_URI=http://back-case:8082
+    - BACK_USER_URI=http://back-user:8081
+    depends_on:
+      - back-case
+      - back-user
+    networks:
+      - medi-network
+
+  dockhand:
+    image: fnsys/dockhand:latest
+    container_name: dockhand-medi
+    restart: unless-stopped
+    user: "0:0"
+    ports:
+      - "3000:3000"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - dockhand_data:/app/data
+    networks:
+      - medi-network
+
+# --- VOLUMES ---
+volumes:
+  postgres_auth_data:
+  postgres_case_data:
+  dockhand_data:
+
+# --- NETWORKS ---
+networks:
+  medi-network:
+    driver: bridge
+
+
+
+#services:
+#  back-user:
+#    build: ./back-user
+#    environment:
+#      APP_ADMIN_EMAIL: ${APP_ADMIN_EMAIL}
+#      APP_ADMIN_PASSWORD: ${APP_ADMIN_PASSWORD}
+#      JWT_SECRET: ${JWT_SECRET}
+#      SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/medilabo
